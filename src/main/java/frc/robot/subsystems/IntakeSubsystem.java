@@ -18,8 +18,10 @@ public class IntakeSubsystem extends SubsystemBase {
     private final SparkFlex motor13;
     private final SparkFlex motor14;
     private double lastSpeed = 0.0;
-
-    public IntakeSubsystem() {
+//COMMENT
+    public IntakeSubsystem() 
+    {
+        System.out.println("SDF");
         motor13 = new SparkFlex(14, MotorType.kBrushless);
         motor14 = new SparkFlex(15, MotorType.kBrushless);
         talonFX = new TalonFX(0); // adjust to real motor ID
