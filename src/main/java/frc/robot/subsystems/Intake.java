@@ -1,135 +1,124 @@
-package frc.robot.subsystems.swervedrive;
-
-import static edu.wpi.first.units.Units.Volts;
-
-import com.ctre.phoenix6.SignalLogger;
-import com.ctre.phoenix6.configs.TalonFXConfiguration;
-import com.ctre.phoenix6.controls.DutyCycleOut;
-import com.ctre.phoenix6.controls.Follower;
-import com.ctre.phoenix6.controls.MotionMagicVoltage;
-import com.ctre.phoenix6.controls.VoltageOut;
-import com.ctre.phoenix6.hardware.TalonFX;
-import com.ctre.phoenix6.signals.InvertedValue;
-import com.ctre.phoenix6.signals.NeutralModeValue;
-import com.revrobotics.spark.SparkFlex;
-import com.revrobotics.spark.SparkLowLevel.MotorType;
-
-import edu.wpi.first.wpilibj2.command.SubsystemBase;
+package frc.robot.subsystems;
 import edu.wpi.first.wpilibj2.command.sysid.SysIdRoutine;
-import frc.robot.Constants.ArmConstants;
+import edu.wpi.first.wpilibj.sysid.SysIdRoutineLog.State;
+
+import edu.wpi.first.units.measure.Voltage;
+import static edu.wpi.first.units.Units.Volts;
+import com.revrobotics.spark.SparkFlex;
+import com.revrobotics.spark.config.SparkFlexConfig;
+import com.revrobotics.spark.SparkLowLevel.MotorType;
+import com.revrobotics.ResetMode;
+import com.ctre.phoenix6.SignalLogger;
+import com.ctre.phoenix6.controls.VoltageOut;
+import com.revrobotics.PersistMode;
+
+import edu.wpi.first.wpilibj2.command.Command;
+import edu.wpi.first.wpilibj2.command.SubsystemBase;
 
 
-public class IntakeSubsystem extends SubsystemBase {
-    private final TalonFX motorFx;
-    private final TalonFX motorFx2;
-    private final VoltageOut m_voltReq;
-    private final MotionMagicVoltage motionMagicRequest;
-    private final DutyCycleOut dutyCycleRequest;
-    private final SysIdRoutine sysIdRoutine;
-   
-    public IntakeSubsystem(){
-        motorFx = new TalonFX(ArmConstants.ARM_MOTOR_CAN_ID);
-        motorFx2 = new TalonFX(ArmConstants.ARM_MOTOR2_CAN_ID);
-        m_voltReq = new VoltageOut(0.0);
-        configureMotor();
-        sysIdRoutine = configSysId();
-        motionMagicRequest = new MotionMagicVoltage(0);
-        dutyCycleRequest = new DutyCycleOut(0);
-    }
-    
-    private void configureMotor() {
-      TalonFXConfiguration config = new TalonFXConfiguration();
-      TalonFXConfiguration config2 = new TalonFXConfiguration();
+import com.revrobotics.spark.config.SparkBaseConfig.IdleMode;
 
-      motorFx2.setControl(new Follower(motorFx.getDeviceID(), true));
-      config.Feedback.SensorToMechanismRatio = ArmConstants.TOTAL_GEAR_RATIO;
-      
-   
-      config.MotionMagic.MotionMagicCruiseVelocity = ArmConstants.ARM_CRUISE_VELOCITY;
-      config.MotionMagic.MotionMagicAcceleration = ArmConstants.ARM_ACCELERATION;
-      config.MotionMagic.MotionMagicJerk = ArmConstants.ARM_JERK;
-      
-   
-      config.Slot0.kP = ArmConstants.kP;
-      config.Slot0.kI = ArmConstants.kI;
-      config.Slot0.kD = ArmConstants.kD;
-      
-   
-      config.Slot0.kS = ArmConstants.ARM_KS;
-      config.Slot0.kG = ArmConstants.ARM_KG;
-      config.Slot0.kV = ArmConstants.ARM_KV;
-      config.Slot0.kA = ArmConstants.ARM_KA;
-     
-      config.Voltage.PeakForwardVoltage = ArmConstants.ARM_PEAK_FORWARD_VOLTAGE;
-      config.Voltage.PeakReverseVoltage = ArmConstants.ARM_PEAK_REVERSE_VOLTAGE;
-      
-      config.MotorOutput.NeutralMode = NeutralModeValue.Brake;
-      config.MotorOutput.Inverted = ArmConstants.ARM_MOTOR_INVERTED 
-          ? InvertedValue.Clockwise_Positive 
-          : InvertedValue.CounterClockwise_Positive;
-          config2.MotorOutput.NeutralMode = NeutralModeValue.Brake;
-      config2.MotorOutput.Inverted = ArmConstants.ARM_MOTOR_INVERTED 
-          ? InvertedValue.Clockwise_Positive 
-          : InvertedValue.CounterClockwise_Positive;
-      motorFx.getConfigurator().apply(config);
-      motorFx2.getConfigurator().apply(config);
-    }
+import com.revrobotics.spark.SparkBase;
+import com.revrobotics.spark.SparkBase.ControlType;
+import com.revrobotics.RelativeEncoder;
 
-    private SysIdRoutine configSysId(){
-      return
-          new SysIdRoutine(
-         new SysIdRoutine.Config(
-            null,    
-            Volts.of(4), 
-            null,       
-            (state) -> SignalLogger.writeString("state", state.toString())
-         ),
-         new SysIdRoutine.Mechanism(
-            (volts) -> motorFx.setControl(m_voltReq.withOutput(volts.in(Volts))),
-            null,
-            this
-         )
-      ); 
-    }
-    public void setPosition(double angle)
-    {
-      motorFx.setControl(motionMagicRequest.withPosition(angle));
-    }
-    public void setManualOutput(double percentOutput) {
-      motorFx.setControl(dutyCycleRequest.withOutput(percentOutput));
-  }
-  public void stop()
+import com.revrobotics.spark.SparkClosedLoopController;
+import com.revrobotics.spark.ClosedLoopSlot;
+import com.revrobotics.spark.FeedbackSensor;
+import com.revrobotics.spark.SparkLimitSwitch;
+import edu.wpi.first.wpilibj2.command.SubsystemBase;
+
+import edu.wpi.first.wpilibj2.command.sysid.SysIdRoutine;
+import edu.wpi.first.units.Units;
+import static edu.wpi.first.units.Units.*;
+
+
+
+public class Intake extends SubsystemBase{
+   
+   private SparkFlex leader = new SparkFlex(1, MotorType.kBrushless);
+   private SparkFlex follower = new SparkFlex(2, MotorType.kBrushless);
+   
+
+   SparkClosedLoopController m_controller = leader.getClosedLoopController();
+   double setPoint = 0;
+    private RelativeEncoder m_encoder = leader.getEncoder();
+   
+    private final SysIdRoutine sysIdRoutine =
+   new SysIdRoutine(
+      new SysIdRoutine.Config(
+         null,        // Use default ramp rate (1 V/s)
+         Volts.of(4), // Reduce dynamic step voltage to 4 to prevent brownout
+         null         // Use default timeout (10 s)
+      ),
+      new SysIdRoutine.Mechanism(
+         (volts) -> leader.setVoltage(volts.in(Volts)),
+         null,
+         this
+      )
+   );
+
+
+   
+
+   public Intake(){
+      
+
+      configureMotors();
+   }
+   public void setPosition(double pos)
+   {
+      this.setPoint = pos;
+   }
+
+
+   public void configureMotors(){
+      SparkFlexConfig leaderConfig = new SparkFlexConfig();
+      SparkFlexConfig followerConfig = new SparkFlexConfig();
+      followerConfig.follow(leader);
+
+      leaderConfig.closedLoop
+      .p(0)
+      .i(0)
+      .d(0)
+      .outputRange(0, 0);
+
+      leaderConfig.closedLoop.feedForward
+      .kS(0)
+      .kV(0)
+      .kA(0)
+      .kG(0) // kG is a linear gravity feedforward, for an elevator
+      .kCos(0) // kCos is a cosine gravity feedforward, for an arm
+      .kCosRatio(0); // kCosRatio relates the encoder position to absolute position
+      
+      leaderConfig.closedLoop.maxMotion
+         .cruiseVelocity(0)
+         .maxAcceleration(0)
+         .allowedProfileError(0);
+      leader.configure(leaderConfig, ResetMode.kResetSafeParameters, PersistMode.kPersistParameters);
+      follower.configure(followerConfig, ResetMode.kResetSafeParameters, PersistMode.kPersistParameters);
+}
+   
+   public Command sysIdQuasistatic(SysIdRoutine.Direction direction) {
+      return sysIdRoutine.quasistatic(direction);
+   }
+
+   public Command sysIdDynamic(SysIdRoutine.Direction direction) {
+      return sysIdRoutine.dynamic(direction);
+   }
+  public void setSpeed(double speed)
   {
-   motorFx.stopMotor();
+      leader.set(speed);
   }
-  public double getVelocity()
+
+  public void setPosition()
   {
-   return motorFx.getVelocity().getValueAsDouble();
+      m_controller.setSetpoint(setPoint, ControlType.kPosition, ClosedLoopSlot.kSlot0);
+      
   }
   public double getPosition()
   {
-   return motorFx.getPosition().getValueAsDouble();
+   return m_encoder.getPosition();
   }
-
-  public double getTargetDegrees()
-  {
-   return motorFx.getClosedLoopReference().getValueAsDouble();
-  }
-
-  public double getCurrentAmps() {
-   return motorFx.getStatorCurrent().getValueAsDouble();
-}
-public double getVoltage() {
-   return motorFx.getMotorVoltage().getValueAsDouble();
-}
-public SysIdRoutine getSysID(){
-
-return this.sysIdRoutine;
-}
-public void setSpeed(double speed)
-{
-   motorFx.set(speed); 
 }
 
-
-}
